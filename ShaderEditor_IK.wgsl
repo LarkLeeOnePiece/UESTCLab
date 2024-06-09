@@ -1,8 +1,12 @@
 var<private> RED:vec3<f32>=vec3(209.0, 99.0, 71.0)/255.0;
 var<private> BLUE:vec3<f32>=vec3(135,206,235)/255.0;
 var<private> BLACK:vec3<f32>=vec3(0,0,0)/255.0;
+var<private> BROWN:vec3<f32>=vec3(220,74,43)/255.0;
+var<private> DEEPGREEN:vec3<f32>=vec3(104, 140, 27)/255.0;
+var<private> SHADOWGREEN:vec3<f32>=vec3(165,233,154)/255.0;
 const BAR_NUM: i32 = 2;
 const click_radius: f32 = 0.005;
+const float_radius: f32 = 0.009;
 
 struct Circle {
   center: vec2<f32>,
@@ -40,11 +44,23 @@ fn initializeJoint() -> JointClass {
     );
 }
 
-fn DrawCircle(circle:Circle,pos:vec2<f32>)-> vec4<f32>{
+fn DrawCircle(circle:Circle,pos:vec2<f32>,colorID:i32)-> vec4<f32>{
     var len:f32=distance(circle.center,pos);
-    if (len<=circle.radius){
-        return vec4<f32>(RED,2.0);
+    if (colorID==0){// joint
+      if (len<=circle.radius){
+          return vec4<f32>(RED,2.0);
+      }
+    }else if (colorID==1){// target point
+      if (len<=circle.radius){
+          return vec4<f32>(DEEPGREEN,2.0);
+      }
+    }else if (colorID==2){// Float point
+      if (len<=circle.radius){
+          return vec4<f32>(SHADOWGREEN,2.0);
+      }
     }
+
+    
     return vec4<f32>(BLACK,0.0);
 }
 fn DrawRectangle(rect:Rectangle,pos:vec2<f32>)-> vec4<f32>{
@@ -106,7 +122,7 @@ fn FK_DrawJoints(joints:JointClass,pos:vec2<f32>)-> vec4<f32>{
         if(object_id==0){
         // for circle
           var localCircle=Circle(vec2<f32>(cur_pos),joints.radius);
-          var local_out_color=DrawCircle(localCircle,pos);
+          var local_out_color=DrawCircle(localCircle,pos,i32(0));
           if(local_out_color.w>=1.0){
             out_color=local_out_color;
           }
@@ -180,36 +196,79 @@ fn MouseFloat()->vec2<f32>{
   return FloatMousePos;
 }
 
+//--------------------------------------------------------------
+//This is for inverse Kinematics
+// 定义常量
+var<private> L1: f32 = 0.3;
+var<private> L2: f32 = 0.3;
+var<private> x_o: f32 = 0.5;
+var<private> y_o: f32 = 0.0;
+
+// 正向运动学函数
+fn forward_kinematics(theta1: f32, theta2: f32) -> vec2<f32> {
+    let x = x_o + L1 * cos(theta1) + L2 * cos(theta1 + theta2);
+    let y = y_o + L1 * sin(theta1) + L2 * sin(theta1 + theta2);
+    return vec2<f32>(x, y);
+}
+
+// 雅可比矩阵计算
+fn jacobian(theta1: f32, theta2: f32) -> mat2x2<f32> {
+    let J11 = -L1 * sin(theta1) - L2 * sin(theta1 + theta2);
+    let J12 = -L2 * sin(theta1 + theta2);
+    let J21 = L1 * cos(theta1) + L2 * cos(theta1 + theta2);
+    let J22 = L2 * cos(theta1 + theta2);
+    return mat2x2<f32>(vec2<f32>(J11, J12), vec2<f32>(J21, J22));
+}
+
+// 矩阵求伪逆
+fn pseudo_inverse(J: mat2x2<f32>) -> mat2x2<f32> {
+    let det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+    if det == 0.0 {
+        // 处理奇异矩阵情况（这里简单返回单位矩阵）
+        return mat2x2<f32>(vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0));
+    } else {
+        let inv_det = 1.0 / det;
+        let J_inv = mat2x2<f32>(
+            vec2<f32>(J[1][1] * inv_det, -J[0][1] * inv_det),
+            vec2<f32>(-J[1][0] * inv_det, J[0][0] * inv_det)
+        );
+        return J_inv;
+    }
+}
+
+// 逆向运动学求解函数
+fn inverse_kinematics(target_pos: vec2<f32>, initial_guess: vec2<f32>, tol: f32, max_iter: i32) -> vec2<f32> {
+    var theta = initial_guess;
+    for (var i: i32 = 0; i < max_iter; i = i + 1) {
+        let current_pos = forward_kinematics(theta[0], theta[1]);
+        let error = target_pos - current_pos;
+        if (length(error) < tol) {
+            break;
+        }
+        let J = jacobian(theta[0], theta[1]);
+        let J_inv = pseudo_inverse(J);
+        let dtheta = J_inv * error;
+        theta = theta + dtheta;
+    }
+    return theta;
+}
+
+//----------------------------------------------------------------------------
+
+
+
+const Frequency: i32 = 2;
+
 @fragment
 fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    var pixel_coor:vec2<f32>=vec2<f32>(position.x/Resolution.y,(Resolution.y-position.y)/Resolution.y);//convert to the origin at left bottom
-    let joint: JointClass = initializeJoint();
 
-    update_angle_parameter();
-
-    
-    var clikcPos=MouseFloat();
-    var ClickCircle=Circle(vec2<f32>(clikcPos),click_radius);
-    //angArray[0]=get_angle_parameter_0();
-    //GlobalAngArray[0]=angArray[0];
-    //angArray[1]=get_angle_parameter_1();
-    //GlobalAngArray[0]=129.75895938803365;
-    //GlobalAngArray[1]=243.6121950070767;
-    angArray[0]=89.99999999999989;
-    GlobalAngArray[0]=angArray[0];
-    angArray[1]=269.9999999995616;
-    var joints_flag=FK_DrawJoints(joint,pixel_coor);
-    var click_flag=DrawCircle(ClickCircle,pixel_coor);
-    if(joints_flag.w>=1.0){
-      return joints_flag;
-    }else if(click_flag.w>=1.0){
-      return click_flag;
-    }
-
-
-    return vec4<f32>(BLACK,1.0);
-    
-
+  if (floor(position.x)==f32(10)&&floor(position.y)==f32(10)){
+      var frameID:i32=intBuffer[0];
+      frameID=(frameID+1)%2;
+      intBuffer[0]=frameID;
+  }
+  
+  return vec4<f32>(1,1,1,1);
 }
 
 //    let Rect_Flag=DrawRectangle(jointBar,pixel_coor);
@@ -220,3 +279,9 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 //    }else if(Rect_Flag.w==1.0){
 //      return Rect_Flag;
 //    }
+
+
+
+
+
+

@@ -1,8 +1,12 @@
 var<private> RED:vec3<f32>=vec3(209.0, 99.0, 71.0)/255.0;
 var<private> BLUE:vec3<f32>=vec3(135,206,235)/255.0;
 var<private> BLACK:vec3<f32>=vec3(0,0,0)/255.0;
+var<private> BROWN:vec3<f32>=vec3(220,74,43)/255.0;
+var<private> DEEPGREEN:vec3<f32>=vec3(104, 140, 27)/255.0;
+var<private> SHADOWGREEN:vec3<f32>=vec3(165,233,154)/255.0;
 const BAR_NUM: i32 = 2;
 const click_radius: f32 = 0.005;
+const float_radius: f32 = 0.009;
 
 struct Circle {
   center: vec2<f32>,
@@ -40,11 +44,23 @@ fn initializeJoint() -> JointClass {
     );
 }
 
-fn DrawCircle(circle:Circle,pos:vec2<f32>)-> vec4<f32>{
+fn DrawCircle(circle:Circle,pos:vec2<f32>,colorID:i32)-> vec4<f32>{
     var len:f32=distance(circle.center,pos);
-    if (len<=circle.radius){
-        return vec4<f32>(RED,2.0);
+    if (colorID==0){// joint
+      if (len<=circle.radius){
+          return vec4<f32>(RED,2.0);
+      }
+    }else if (colorID==1){// target point
+      if (len<=circle.radius){
+          return vec4<f32>(DEEPGREEN,2.0);
+      }
+    }else if (colorID==2){// Float point
+      if (len<=circle.radius){
+          return vec4<f32>(SHADOWGREEN,2.0);
+      }
     }
+
+    
     return vec4<f32>(BLACK,0.0);
 }
 fn DrawRectangle(rect:Rectangle,pos:vec2<f32>)-> vec4<f32>{
@@ -106,7 +122,7 @@ fn FK_DrawJoints(joints:JointClass,pos:vec2<f32>)-> vec4<f32>{
         if(object_id==0){
         // for circle
           var localCircle=Circle(vec2<f32>(cur_pos),joints.radius);
-          var local_out_color=DrawCircle(localCircle,pos);
+          var local_out_color=DrawCircle(localCircle,pos,i32(0));
           if(local_out_color.w>=1.0){
             out_color=local_out_color;
           }
@@ -190,6 +206,8 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     
     var clikcPos=MouseClick();
     var ClickCircle=Circle(vec2<f32>(clikcPos),click_radius);
+    var floatPos=MouseFloat();
+    var FloatCircle=Circle(vec2<f32>(floatPos),float_radius);
     angArray[0]=get_angle_parameter_0();
     GlobalAngArray[0]=angArray[0];
     angArray[1]=get_angle_parameter_1();
@@ -198,13 +216,15 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     //GlobalAngArray[0]=angArray[0];
     //angArray[1]=269.9999999995616;
     var joints_flag=FK_DrawJoints(joint,pixel_coor);
-    var click_flag=DrawCircle(ClickCircle,pixel_coor);
+    var click_flag=DrawCircle(ClickCircle,pixel_coor,i32(1));
+    var float_flag=DrawCircle(FloatCircle,pixel_coor,i32(2));
     if(joints_flag.w>=1.0){
       return joints_flag;
     }else if(click_flag.w>=1.0){
       return click_flag;
+    }else if(float_flag.w>=1.0){
+      return float_flag;
     }
-
 
     return vec4<f32>(BLACK,1.0);
     
