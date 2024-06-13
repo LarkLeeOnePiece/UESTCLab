@@ -179,6 +179,11 @@ fn update_angle_parameter(){
     }  
     floatBuffer[1] = theta;
   }
+  if(Key==32){// key==space
+    var mode:i32=intBuffer[0];
+    mode=(mode+1)%2;
+    intBuffer[0]=mode;
+  }
 }
 fn get_angle_parameter_0()->f32{
   return floatBuffer[0];
@@ -198,20 +203,20 @@ fn MouseFloat()->vec2<f32>{
 
 //--------------------------------------------------------------
 //This is for inverse Kinematics
-// 定义常量
+//define the const
 var<private> L1: f32 = 0.3;
 var<private> L2: f32 = 0.3;
 var<private> x_o: f32 = 0.5;
 var<private> y_o: f32 = 0.0;
 
-// 正向运动学函数
+// FW
 fn forward_kinematics(theta1: f32, theta2: f32) -> vec2<f32> {
     let x = x_o + L1 * cos(theta1) + L2 * cos(theta1 + theta2);
     let y = y_o + L1 * sin(theta1) + L2 * sin(theta1 + theta2);
     return vec2<f32>(x, y);
 }
 
-// 雅可比矩阵计算
+// Jacobian 
 fn jacobian(theta1: f32, theta2: f32) -> mat2x2<f32> {
     let J11 = -L1 * sin(theta1) - L2 * sin(theta1 + theta2);
     let J12 = -L2 * sin(theta1 + theta2);
@@ -220,23 +225,35 @@ fn jacobian(theta1: f32, theta2: f32) -> mat2x2<f32> {
     return mat2x2<f32>(vec2<f32>(J11, J12), vec2<f32>(J21, J22));
 }
 
-// 矩阵求伪逆
+// Inverse
+// Function to calculate the pseudoinverse of a 2x2 matrix manually
+// WGSL Function to calculate the pseudoinverse of a 2x2 matrix manually
+// WGSL Function to calculate the pseudoinverse of a 2x2 matrix manually
 fn pseudo_inverse(J: mat2x2<f32>) -> mat2x2<f32> {
-    let det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
-    if det == 0.0 {
-        // 处理奇异矩阵情况（这里简单返回单位矩阵）
-        return mat2x2<f32>(vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0));
-    } else {
-        let inv_det = 1.0 / det;
-        let J_inv = mat2x2<f32>(
-            vec2<f32>(J[1][1] * inv_det, -J[0][1] * inv_det),
-            vec2<f32>(-J[1][0] * inv_det, J[0][0] * inv_det)
-        );
-        return J_inv;
+    var J_copy: mat2x2<f32> = J;  // Create a mutable copy of the matrix
+    var det: f32 = J_copy[0][0] * J_copy[1][1] - J_copy[0][1] * J_copy[1][0];
+    
+    // Check for singularity and apply Tikhonov regularization if necessary
+    if abs(det) < 1e-6 {
+        J_copy[0][0] += 1e-6;
+        J_copy[1][1] += 1e-6;
+        det = J_copy[0][0] * J_copy[1][1] - J_copy[0][1] * J_copy[1][0];
     }
+    
+    let inv_det: f32 = 1.0 / det;
+    
+    let J_inv: mat2x2<f32> = mat2x2<f32>(
+        vec2<f32>(J_copy[1][1] * inv_det, -J_copy[0][1] * inv_det),
+        vec2<f32>(-J_copy[1][0] * inv_det, J_copy[0][0] * inv_det)
+    );
+    
+    return J_inv;
 }
 
-// 逆向运动学求解函数
+
+
+
+// IK
 fn inverse_kinematics(target_pos: vec2<f32>, initial_guess: vec2<f32>, tol: f32, max_iter: i32) -> vec2<f32> {
     var theta = initial_guess;
     for (var i: i32 = 0; i < max_iter; i = i + 1) {
@@ -258,19 +275,88 @@ fn inverse_kinematics(target_pos: vec2<f32>, initial_guess: vec2<f32>, tol: f32,
 
 
 const Frequency: i32 = 2;
-
+var<private> clikcPos:vec2<f32>;
+var<private> ClickCircle:Circle;
+var<private> floatPos:vec2<f32>;
+var<private> FloatCircle:Circle;
 @fragment
 fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    update_angle_parameter();
+    let joint: JointClass = initializeJoint();
+    var pixel_coor:vec2<f32>=vec2<f32>(position.x/Resolution.y,(Resolution.y-position.y)/Resolution.y);//convert to the origin at left bottom
+    if(intBuffer[0]==0){//FK mode
+      clikcPos=MouseClick();
+      ClickCircle=Circle(vec2<f32>(clikcPos),click_radius);
+      floatPos=MouseFloat();
+      FloatCircle=Circle(vec2<f32>(floatPos),float_radius);
+      angArray[0]=get_angle_parameter_0();
+      GlobalAngArray[0]=angArray[0];
+      angArray[1]=get_angle_parameter_1();
+      // ik TEST:
+      //angArray[0]=89.99999999999989;
+      //GlobalAngArray[0]=angArray[0];
+      //angArray[1]=269.9999999995616;
+      var joints_flag=FK_DrawJoints(joint,pixel_coor);
+      var click_flag=DrawCircle(ClickCircle,pixel_coor,i32(1));
+      var float_flag=DrawCircle(FloatCircle,pixel_coor,i32(2));
+      if(joints_flag.w>=1.0){
+        return joints_flag;
+      }else if(click_flag.w>=1.0){
+        return click_flag;
+      }else if(float_flag.w>=1.0){
+        return float_flag;
+      }
 
-  if (floor(position.x)==f32(10)&&floor(position.y)==f32(10)){
-      var frameID:i32=intBuffer[0];
-      frameID=(frameID+1)%2;
-      intBuffer[0]=frameID;
-  }
+      return vec4<f32>(BLACK,1.0);
+    
+    }else{
+      if (floor(position.x)==f32(10)&&floor(position.y)==f32(10)){
+          var frameID:i32=intBuffer[1];
+          frameID=(frameID+1)%2;
+          intBuffer[1]=frameID;
+      }
+      if(intBuffer[1]==0){// calculate the solution
+        let initial_guess = vec2<f32>(angArray[0], angArray[1]);
+        let tol: f32 = 1e-6;
+        let max_iter: i32 = 100;
+        clikcPos=MouseClick();
+        let result = inverse_kinematics(clikcPos, initial_guess, tol, max_iter);
+        floatBuffer[10]=result.x*180/3.1415926;
+        floatBuffer[11]=result.y*180/3.1415926;
+      }else if(intBuffer[1]==1){
+        clikcPos=MouseClick();
+        ClickCircle=Circle(vec2<f32>(clikcPos),click_radius);
+        floatPos=MouseFloat();
+        FloatCircle=Circle(vec2<f32>(floatPos),float_radius);
+
+        angArray[0]=floatBuffer[10];
+        GlobalAngArray[0]=angArray[0];
+        angArray[1]=floatBuffer[11];
+        floatBuffer[0] = angArray[0];
+        floatBuffer[1] = angArray[1];
+
+        var joints_flag=FK_DrawJoints(joint,pixel_coor);
+        var click_flag=DrawCircle(ClickCircle,pixel_coor,i32(1));
+        var float_flag=DrawCircle(FloatCircle,pixel_coor,i32(2));
+        if(joints_flag.w>=1.0){
+          return joints_flag;
+        }else if(click_flag.w>=1.0){
+          return click_flag;
+        }else if(float_flag.w>=1.0){
+          return float_flag;
+        }
+      }
+    
+      return vec4<f32>(BLACK,1.0);
+    }
   
   return vec4<f32>(1,1,1,1);
 }
-
+//if (floor(position.x)==f32(10)&&floor(position.y)==f32(10)){
+//      var frameID:i32=intBuffer[0];
+//      frameID=(frameID+1)%2;
+//      intBuffer[0]=frameID;
+//  }
 //    let Rect_Flag=DrawRectangle(jointBar,pixel_coor);
 //    let Cricle_Flag=DrawCircle(jointCircle,pixel_coor);
 

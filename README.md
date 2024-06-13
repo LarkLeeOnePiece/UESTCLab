@@ -29,6 +29,10 @@ If pixel.xy==(0,0) and frame=0, calculate the jacobian
 
 else if frame==1, render the result
 
+#### 2.1 IntBuffer
+IntBuffer[0]: mode of the program, FK or IK, based on the key space
+
+IntBuffer[1]: frame number, control for the IK process
 
 
 
