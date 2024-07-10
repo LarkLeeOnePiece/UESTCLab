@@ -34,5 +34,23 @@ IntBuffer[0]: mode of the program, FK or IK, based on the key space
 
 IntBuffer[1]: frame number, control for the IK process
 
+"""
+ if (floor(position.x)==f32(10)&&floor(position.y)==f32(10)){
+          var frameID:i32=intBuffer[1];
+          frameID=(frameID+1)%50;
+          intBuffer[1]=frameID;
+      }
+      if(intBuffer[1]<=1){// calculate the solution
+        let initial_guess = vec2<f32>(angArray[0], angArray[1]);
+        let tol: f32 = 1e-6;
+        let max_iter: i32 = 100;
+        clikcPos=MouseClick();
+        let result = inverse_kinematics(clikcPos, initial_guess, tol, max_iter);
+        floatBuffer[10]=result.x*180/3.1415926;
+        floatBuffer[11]=result.y*180/3.1415926;
+      }else if(intBuffer[1]>=2){
+
+"""
+
 
 
